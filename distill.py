@@ -6,26 +6,48 @@ import torchvision.transforms as transforms
 import argparse
 import torch.nn.functional as F
 from cutout import Cutout
-from models.resnet import *
+from models.resnet_cifar import *
 from models.preactresnet import *
+from models.resnet import *
 from models.senet import *
 from utils import *
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
 parser = argparse.ArgumentParser(description='Task-Oriented Feature Distillation. ')
-parser.add_argument('--model', default="resnet18", help="choose the student model", type=str)
+parser.add_argument('--model', default="res8", help="choose the student model", type=str)
 parser.add_argument('--dataset', default="cifar100", type=str, help="cifar10/cifar100")
 parser.add_argument('--alpha', default=0.05, type=float)
 parser.add_argument('--beta', default=0.03, type=float)
 parser.add_argument('--l2', default=7e-3, type=float)
-parser.add_argument('--teacher', default="resnet18", type=str)
+parser.add_argument('--teacher', default="res110", type=str)
 parser.add_argument('--t', default=3.0, type=float, help="temperature for logit distillation ")
 args = parser.parse_args()
 print(args)
 
 BATCH_SIZE = 128
 LR = 0.1
+SEED = 30
+
+
+def reproducible_state(seed =3,device ="cuda"):
+   #device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = device
+    # fix the seed and make cudnn deterministic
+    #seed = 3
+    import numpy as np
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if device == "cuda":
+        torch.cuda.manual_seed_all(seed=seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+    print("REPRODUCIBILITY is Active!Random seed = ",seed,"\n")
+
+
+
+reproducible_state(seed=SEED,device=device)
+
 
 transform_train = transforms.Compose([transforms.RandomCrop(32, padding=4, fill=128),
                                       transforms.RandomHorizontalFlip(), transforms.ToTensor(),
@@ -77,26 +99,15 @@ testloader = torch.utils.data.DataLoader(
 )
 
 #   get the student model
-if args.model == "resnet18":
-    net = resnet18()
-if args.model == "resnet50":
+if args.model == "res8":
+    net = resnet8_cifar()
+if args.model == "res110":
     net = resnet50()
-if args.model == "resnet101":
-    net = resnet101()
+if args.model == "res34":
+    net = resnet34()
 if args.model == "resnet152":
     net = resnet152()
-if args.model == "resnext50":
-    net = resnext50_32x4d()
-if args.model == "mobilenet":
-    net = mobilenet()
-if args.model == "mobilenetv2":
-    net = mobilenetv2()
-if args.model == "shufflenet":
-    net = shufflenet()
-if args.model == "shufflenetv2":
-    net = shufflenetv2()
-if args.model == "preactresnet18":
-    net = preactresnet18()
+
     LR = 0.02
     # reduce init lr for stable training
 if args.model == "preactresnet50":
@@ -109,16 +120,28 @@ if args.model == "senet50":
     net = seresnet50()
 
 #   get the teacher model
-if args.teacher == 'resnet18':
-    teacher = resnet18()
-elif args.teacher == 'resnet50':
-    teacher = resnet50()
+if args.teacher == 'res34':
+    teacher = resnet34()
+elif args.teacher == 'res110':
+    teacher = resnet110_cifar()
 elif args.teacher == 'resnet101':
     teacher = resnet101()
 elif args.teacher == 'resnet152':
     teacher = resnet152()
 
-teacher.load_state_dict(torch.load("./teacher/" + args.teacher + ".pth"))
+
+
+teacher_path = "/home/aasadian/saved/ce/cifar100/res110_cifar100.pth"
+saved_state_dict = torch.load(teacher_path)
+testing_state_dict = {}
+for (key, value), (key_saved, value_saved) in zip(teacher.state_dict().items(), saved_state_dict.items()):
+    testing_state_dict[key] = value_saved
+teacher.load_state_dict(testing_state_dict)
+teacher.eval()
+
+
+#teacher.load_state_dict(torch.load("./teacher/" + args.teacher + ".pth"))
+#teacher.load_state_dict(torch.load("/home/aasadian/saved/ce/cifar100/res110_cifar100.pth"))
 teacher.cuda()
 net.to(device)
 orthogonal_penalty = args.beta
@@ -214,7 +237,8 @@ if __name__ == "__main__":
         if correct / total > best_acc:
             best_acc = correct / total
             print("Best Accuracy Updated: ", best_acc * 100)
-            torch.save(net.state_dict(), "./checkpoint/" + args.model + ".pth")
+            #torch.save(net.state_dict(), "./checkpoint/" + args.model + ".pth")
+            torch.save(net.state_dict(), "/home/aasadian/tofd/saved/res8_teacher_res110_"+str(SEED)+ ".pth")
 print("Training Finished, Best Accuracy is %.4f%%" % (best_acc * 100))
 
 
