@@ -11,6 +11,8 @@ from models.preactresnet import *
 from models.resnet import *
 from models.senet import *
 from utils import *
+import time
+from dataloader import get_test_loader_cifar,get_train_valid_loader_cifars
 
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 
@@ -27,7 +29,7 @@ print(args)
 
 BATCH_SIZE = 128
 LR = 0.1
-SEED = 30
+SEED = 67
 
 
 def reproducible_state(seed =3,device ="cuda"):
@@ -60,18 +62,19 @@ transform_test = transforms.Compose([
 
 trainset, testset = None, None
 if args.dataset == 'cifar100':
-    trainset = torchvision.datasets.CIFAR100(
-        root='data',
-        train=True,
-        download=True,
-        transform=transform_train
-    )
-    testset = torchvision.datasets.CIFAR100(
-        root='data',
-        train=False,
-        download=True,
-        transform=transform_test
-    )
+    pass
+    #trainset = torchvision.datasets.CIFAR100(
+      #  root='data',
+      #  train=True,
+      #  download=True,
+       # transform=transform_train
+    #)#
+   # testset = torchvision.datasets.CIFAR100(
+     #   root='data',
+     #   train=False,
+     #   download=True,
+     #   transform=transform_test
+   # )
 if args.dataset == 'cifar10':
     trainset = torchvision.datasets.CIFAR10(
         root='data',
@@ -85,28 +88,34 @@ if args.dataset == 'cifar10':
         download=True,
         transform=transform_test
     )
-trainloader = torch.utils.data.DataLoader(
-    trainset,
-    batch_size=BATCH_SIZE,
-    shuffle=True,
-    num_workers=4
-)
-testloader = torch.utils.data.DataLoader(
-    testset,
-    batch_size=BATCH_SIZE,
-    shuffle=False,
-    num_workers=4
-)
+
+
+data_loader_dict, dataset_sizes = get_train_valid_loader_cifars(batch_size=BATCH_SIZE,cifar10_100="cifar100")
+
+trainloader = data_loader_dict["train"]
+#trainloader = torch.utils.data.DataLoader(
+ #   trainset,
+  #  batch_size=BATCH_SIZE,
+  #  shuffle=True,
+  #  num_workers=4
+#)
+testloader = get_test_loader_cifar(batch_size=BATCH_SIZE,dataset="cifar100")
+#testloader = torch.utils.data.DataLoader(
+  ##  testset,
+   # batch_size=BATCH_SIZE,
+   # shuffle=False,
+   # num_workers=4
+#)
 
 #   get the student model
 if args.model == "res8":
-    net = resnet8_cifar()
+    net = resnet8_cifar(num_classes=100)
 if args.model == "res110":
     net = resnet50()
 if args.model == "res34":
     net = resnet34()
 if args.model == "resnet152":
-    net = resnet152()
+    net = resnet152(num_classes=100)
 
     LR = 0.02
     # reduce init lr for stable training
@@ -123,7 +132,7 @@ if args.model == "senet50":
 if args.teacher == 'res34':
     teacher = resnet34()
 elif args.teacher == 'res110':
-    teacher = resnet110_cifar()
+    teacher = resnet110_cifar(num_classes=100)
 elif args.teacher == 'resnet101':
     teacher = resnet101()
 elif args.teacher == 'resnet152':
@@ -131,7 +140,7 @@ elif args.teacher == 'resnet152':
 
 
 
-teacher_path = "/home/aasadian/saved/ce/cifar100/res110_cifar100.pth"
+teacher_path = "/home/aasadian/tofd/teacher/teacher_res110_seed_50.pth"
 saved_state_dict = torch.load(teacher_path)
 testing_state_dict = {}
 for (key, value), (key_saved, value_saved) in zip(teacher.state_dict().items(), saved_state_dict.items()):
@@ -152,7 +161,9 @@ optimizer = optim.SGD(net.parameters(), lr=LR, weight_decay=args.l2, momentum=0.
 if __name__ == "__main__":
     best_acc = 0
     print("Start Training")
+    since = time.time()
     for epoch in range(250):
+        print("Epoch :",epoch)
         if epoch in [80, 160, 240]:
             for param_group in optimizer.param_groups:
                 param_group['lr'] /= 10
@@ -173,6 +184,9 @@ if __name__ == "__main__":
             #   init the feature resizing layer depending on the feature size of students and teachers
             #   a fully connected layer is used as feature resizing layer here
             if not init:
+
+                print("True")
+
                 teacher_feature_size = teacher_feature[0].size(1)
                 student_feature_size = student_feature[0].size(1)
                 num_auxiliary_classifier = len(teacher_logits)
@@ -200,24 +214,30 @@ if __name__ == "__main__":
 
             # Orthogonal Loss
             for index in range(len(student_feature)):
-                weight = list(net.link[index].parameters())[0]
-                weight_trans = weight.permute(1, 0)
-                ones = torch.eye(weight.size(0)).cuda()
-                ones2 = torch.eye(weight.size(1)).cuda()
-                loss += torch.dist(torch.mm(weight, weight_trans), ones, p=2) * args.beta
-                loss += torch.dist(torch.mm(weight_trans, weight), ones2, p=2) * args.beta
 
-        sum_loss += loss.item()
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-        total += float(labels.size(0))
-        _, predicted = torch.max(outputs[0].data, 1)
-        correct += float(predicted.eq(labels.data).cpu().sum())
 
-        if i % 20 == 0:
-            print('[epoch:%d, iter:%d] Loss: %.03f | Acc: %.2f%% '
-                  % (epoch + 1, (i + 1 + epoch * length), sum_loss / (i + 1),
+                #check to apply this loss only for feature resizing layer. In original paper, it has been applied on all the layers
+                if student_feature[index].shape != teacher_feature[index].shape:
+                    weight = list(net.link[index].parameters())[0]
+                    weight_trans = weight.permute(1, 0)
+                    ones = torch.eye(weight.size(0)).cuda()
+                    ones2 = torch.eye(weight.size(1)).cuda()
+                    loss += torch.dist(torch.mm(weight, weight_trans), ones, p=2) * args.beta
+                    loss += torch.dist(torch.mm(weight_trans, weight), ones2, p=2) * args.beta
+                #else:
+                    #print("No Orthogonal loss!")
+
+            sum_loss += loss.item()
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            total += float(labels.size(0))
+            _, predicted = torch.max(outputs[0].data, 1)
+            correct += float(predicted.eq(labels.data).cpu().sum())
+
+            if i % 20 == 0:
+                print('[epoch:%d, iter:%d] Loss: %.03f | Acc: %.2f%% '
+                    % (epoch + 1, (i + 1 + epoch * length), sum_loss / (i + 1),
                      100 * correct / total))
 
     print("Waiting Test!")
@@ -240,5 +260,8 @@ if __name__ == "__main__":
             #torch.save(net.state_dict(), "./checkpoint/" + args.model + ".pth")
             torch.save(net.state_dict(), "/home/aasadian/tofd/saved/res8_teacher_res110_"+str(SEED)+ ".pth")
 print("Training Finished, Best Accuracy is %.4f%%" % (best_acc * 100))
+time_elapsed = time.time() - since
+print('Training complete in {:.0f}m {:.0f}s'.format(
+    time_elapsed // 60, time_elapsed % 60))
 
 

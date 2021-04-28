@@ -404,8 +404,9 @@ def train_grid_regular_ce(model,
                 #print("Previous Validation Loss is smaller!")
 
     time_elapsed = time.time() - since
-    #print('Training complete in {:.0f}m {:.0f}s'.format(
-        #time_elapsed // 60, time_elapsed % 60))
+
+    print('Training complete in {:.0f}m {:.0f}s'.format(
+        time_elapsed // 60, time_elapsed % 60))
     #print('Best val Acc with Lowest val Loss: {:4f}'.format(best_acc))
     #print('Best VAL Acc: {:4f}'.format(best_val_acc))
     #additional_note += "\n"+ 'Best val Acc with Lowest val Loss: {:4f}'.format(best_acc) + \
@@ -479,15 +480,35 @@ def train_grid_regular_ce(model,
 
     #return  test_acc_value
 
+SEEDS = [50,67]
+setting = "dih"
+DEVICE = "cuda:2"
 
-reproducible_state(seed=50)
-teacher = resnet34(num_classes=100)
+
+for SEED in SEEDS:
+    reproducible_state(seed=SEED,device=DEVICE)
+
+    teacher = resnet34(num_classes=100)
 
 
-optimizer,scheduler = get_optimizer_scheduler(teacher)
+    if setting == "dih":
+        EPOCHS =200
+        optimizer,scheduler = get_optimizer_scheduler(teacher)
 
-train_grid_regular_ce(teacher,
+    else:
+        EPOCHS = 250
+        optimizer = torch.optim.SGD(teacher, lr=0.1, weight_decay=5e-4, momentum=0.9, nesterov=True)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80, 160, 240], gamma=0.1,
+                                                     last_epoch=-1)
+
+
+
+
+
+    train_grid_regular_ce(teacher,
                       optimizer=optimizer,
-                      experiment_name="teacher_res34_seed_50",
+                      experiment_name="teacher_res34_seed_"+str(SEED),
                       input_data_size=(128,32,32),
-                      train_on="cuda:2")
+                      scheduler=scheduler,
+                      epochs=EPOCHS,
+                      train_on=DEVICE)

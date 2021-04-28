@@ -397,7 +397,7 @@ def train_grid_regular_ce(model,
                                                               #loss=loss,
                                                               #add_path_to_root=add_path_to_root,
                                                               #is_best=True)
-                torch.save(model.state_dict(),"/home/aasadian/tofd/teacher"+experiment_name+".pth")
+                torch.save(model.state_dict(),"/home/aasadian/tofd/teacher/"+experiment_name+".pth")
                 #saved_path = experiment_result_saver(model=model,
                                                      #experiment_name=experiment_name,
                                                      #server= server,
@@ -408,27 +408,14 @@ def train_grid_regular_ce(model,
                 #print("Previous Validation Loss is smaller!")
 
     time_elapsed = time.time() - since
-    #print('Training complete in {:.0f}m {:.0f}s'.format(
-        #time_elapsed // 60, time_elapsed % 60))
-    #print('Best val Acc with Lowest val Loss: {:4f}'.format(best_acc))
-    #print('Best VAL Acc: {:4f}'.format(best_val_acc))
-    #additional_note += "\n"+ 'Best val Acc with Lowest val Loss: {:4f}'.format(best_acc) + \
-    #"\n" + 'Best VAL Acc: {:4f}'.format(best_val_acc)+"\n"
+    print('Training complete in {:.0f}m {:.0f}s'.format(
+        time_elapsed // 60, time_elapsed % 60))
 
-    # load best model weights
     model.load_state_dict(best_model_wts)
 
-    #total_checkpoint = torch.load(best_model_checkpoint_path)
-    #best_state_dict = total_checkpoint["model_state_dict"]
 
 
 
-    #if added_regressor != None:
-        ##Todo
-       # print("TODO for Added Regressor")
-
-
-    #else:
 
     since = time.time()
     model.eval()
@@ -459,36 +446,37 @@ def train_grid_regular_ce(model,
         print(evaluation_log)
 
 
+SEEDS = [50,67]
+setting = "dih"
+DEVICE = "cuda:3"
 
 
-    #evaluation_log,test_acc_value = test_data_evaluation(model=model,
-                 #                             test_loader=test_loader,
-                 #                             state_dict=best_state_dict,
-                  #                            saved_load_state_path=None,#saved_path,
-                  #                            added_regressor = None,
-                  #                            device=train_on,
-                  #                            server=server)
+for SEED in SEEDS:
+    reproducible_state(seed=SEED,device=DEVICE)
 
-    #experiment_result_saver(model= model,
-                          #      experiment_name=experiment_name,
-                          #      server=server,
-                          #      specific_file_name=specific_file_name,
-                          #      additional_note=additional_note,
-                          #      train_acc_dict = train_acc_dict,
-                          #      train_loss_dict =train_loss_dict,
-                          #      val_acc_dict =val_acc_dict,
-                          #      val_loss_dict = val_loss_dict,
-                          #      test_result_log= evaluation_log,
-                          #  add_path_to_root= add_path_to_root)
-
-    #return  test_acc_value
+    teacher = resnet110_cifar(num_classes=100)
 
 
-reproducible_state(seed=50,device="cuda:3")
+    if setting == "dih":
+        EPOCHS =200
+        optimizer,scheduler = get_optimizer_scheduler(teacher)
 
-teacher = resnet110_cifar(num_classes=100)
+    else:
+        EPOCHS = 250
+        optimizer = torch.optim.SGD(teacher, lr=0.1, weight_decay=5e-4, momentum=0.9, nesterov=True)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[80, 160, 240], gamma=0.1,
+                                                     last_epoch=-1)
 
 
-optimizer,scheduler = get_optimizer_scheduler(teacher)
 
-train_grid_regular_ce(teacher,optimizer=optimizer,experiment_name="teacher_res110_seed_50",input_data_size=(128,32,32))
+
+
+
+
+    train_grid_regular_ce(teacher,
+                      optimizer=optimizer,
+                      experiment_name="teacher_res110_seed_"+str(SEED),
+                      input_data_size=(128,32,32),
+                      scheduler=scheduler,
+                      epochs=EPOCHS,
+                      train_on=DEVICE)
