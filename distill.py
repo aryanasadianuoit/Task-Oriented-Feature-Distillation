@@ -12,24 +12,27 @@ from models.resnet import *
 from models.senet import *
 from utils import *
 import time
+
+
+print("RESNET 110")
 from dataloader import get_test_loader_cifar,get_train_valid_loader_cifars
 
-device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
 
 parser = argparse.ArgumentParser(description='Task-Oriented Feature Distillation. ')
 parser.add_argument('--model', default="res8", help="choose the student model", type=str)
 parser.add_argument('--dataset', default="cifar100", type=str, help="cifar10/cifar100")
 parser.add_argument('--alpha', default=0.05, type=float)
 parser.add_argument('--beta', default=0.03, type=float)
-parser.add_argument('--l2', default=7e-3, type=float)
+parser.add_argument('--l2', default=5e-4, type=float)
 parser.add_argument('--teacher', default="res110", type=str)
-parser.add_argument('--t', default=3.0, type=float, help="temperature for logit distillation ")
+parser.add_argument('--t', default=5.0, type=float, help="temperature for logit distillation ")
 args = parser.parse_args()
 print(args)
 
 BATCH_SIZE = 128
 LR = 0.1
-SEED = 67
+SEED = 30
 
 
 def reproducible_state(seed =3,device ="cuda"):
@@ -50,68 +53,17 @@ def reproducible_state(seed =3,device ="cuda"):
 
 reproducible_state(seed=SEED,device=device)
 
-
-transform_train = transforms.Compose([transforms.RandomCrop(32, padding=4, fill=128),
-                                      transforms.RandomHorizontalFlip(), transforms.ToTensor(),
-                                      Cutout(n_holes=1, length=16),
-                                      transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))])
-transform_test = transforms.Compose([
-    transforms.ToTensor(),
-    transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
-])
-
-trainset, testset = None, None
-if args.dataset == 'cifar100':
-    pass
-    #trainset = torchvision.datasets.CIFAR100(
-      #  root='data',
-      #  train=True,
-      #  download=True,
-       # transform=transform_train
-    #)#
-   # testset = torchvision.datasets.CIFAR100(
-     #   root='data',
-     #   train=False,
-     #   download=True,
-     #   transform=transform_test
-   # )
-if args.dataset == 'cifar10':
-    trainset = torchvision.datasets.CIFAR10(
-        root='data',
-        train=True,
-        download=True,
-        transform=transform_train
-    )
-    testset = torchvision.datasets.CIFAR10(
-        root='data',
-        train=False,
-        download=True,
-        transform=transform_test
-    )
-
-
 data_loader_dict, dataset_sizes = get_train_valid_loader_cifars(batch_size=BATCH_SIZE,cifar10_100="cifar100")
 
 trainloader = data_loader_dict["train"]
-#trainloader = torch.utils.data.DataLoader(
- #   trainset,
-  #  batch_size=BATCH_SIZE,
-  #  shuffle=True,
-  #  num_workers=4
-#)
+
 testloader = get_test_loader_cifar(batch_size=BATCH_SIZE,dataset="cifar100")
-#testloader = torch.utils.data.DataLoader(
-  ##  testset,
-   # batch_size=BATCH_SIZE,
-   # shuffle=False,
-   # num_workers=4
-#)
 
 #   get the student model
 if args.model == "res8":
     net = resnet8_cifar(num_classes=100)
 if args.model == "res110":
-    net = resnet50()
+    net = resnet110_cifar(num_classes=100)
 if args.model == "res34":
     net = resnet34()
 if args.model == "resnet152":
@@ -133,6 +85,8 @@ if args.teacher == 'res34':
     teacher = resnet34()
 elif args.teacher == 'res110':
     teacher = resnet110_cifar(num_classes=100)
+elif args.teacher == 'res20':
+    teacher = resnet20_cifar(num_classes=100)
 elif args.teacher == 'resnet101':
     teacher = resnet101()
 elif args.teacher == 'resnet152':
@@ -140,7 +94,7 @@ elif args.teacher == 'resnet152':
 
 
 
-teacher_path = "/home/aasadian/tofd/teacher/teacher_res110_seed_50.pth"
+teacher_path = "/home/aasadian/tofd/teacher/teacher_res110.pth"
 saved_state_dict = torch.load(teacher_path)
 testing_state_dict = {}
 for (key, value), (key_saved, value_saved) in zip(teacher.state_dict().items(), saved_state_dict.items()):
@@ -151,7 +105,8 @@ teacher.eval()
 
 #teacher.load_state_dict(torch.load("./teacher/" + args.teacher + ".pth"))
 #teacher.load_state_dict(torch.load("/home/aasadian/saved/ce/cifar100/res110_cifar100.pth"))
-teacher.cuda()
+#teacher.cuda()
+teacher.to(device)
 net.to(device)
 orthogonal_penalty = args.beta
 init = False
@@ -194,7 +149,8 @@ if __name__ == "__main__":
                 for j in range(num_auxiliary_classifier):
                     link.append(nn.Linear(student_feature_size, teacher_feature_size, bias=False))
                 net.link = nn.ModuleList(link)
-                net.cuda()
+                #net.cuda()
+                net.to(device)
                 #   we redefine optimizer here so it can optimize the net.link layers.
                 optimizer = optim.SGD(net.parameters(), lr=LR, weight_decay=5e-4, momentum=0.9)
                 init = True
@@ -220,8 +176,10 @@ if __name__ == "__main__":
                 if student_feature[index].shape != teacher_feature[index].shape:
                     weight = list(net.link[index].parameters())[0]
                     weight_trans = weight.permute(1, 0)
-                    ones = torch.eye(weight.size(0)).cuda()
-                    ones2 = torch.eye(weight.size(1)).cuda()
+                    #ones = torch.eye(weight.size(0)).cuda()
+                    ones = torch.eye(weight.size(0)).to(device)
+                    #ones2 = torch.eye(weight.size(1)).cuda()
+                    ones2 = torch.eye(weight.size(1)).to(device)
                     loss += torch.dist(torch.mm(weight, weight_trans), ones, p=2) * args.beta
                     loss += torch.dist(torch.mm(weight_trans, weight), ones2, p=2) * args.beta
                 #else:
@@ -240,26 +198,26 @@ if __name__ == "__main__":
                     % (epoch + 1, (i + 1 + epoch * length), sum_loss / (i + 1),
                      100 * correct / total))
 
-    print("Waiting Test!")
-    with torch.no_grad():
-        correct = 0.0
-        total = 0.0
-        for data in testloader:
-            net.eval()
-            images, labels = data
-            images, labels = images.to(device), labels.to(device)
-            outputs, feature = net(images)
-            _, predicted = torch.max(outputs[0].data, 1)
-            correct += float(predicted.eq(labels.data).cpu().sum())
-            total += float(labels.size(0))
+        print("Waiting Test!")
+        with torch.no_grad():
+            correct = 0.0
+            total = 0.0
+            for data in testloader:
+                net.eval()
+                images, labels = data
+                images, labels = images.to(device), labels.to(device)
+                outputs, feature = net(images)
+                _, predicted = torch.max(outputs[0].data, 1)
+                correct += float(predicted.eq(labels.data).cpu().sum())
+                total += float(labels.size(0))
 
-        print('Test Set AccuracyAcc:  %.4f%% ' % (100 * correct / total))
-        if correct / total > best_acc:
-            best_acc = correct / total
-            print("Best Accuracy Updated: ", best_acc * 100)
-            #torch.save(net.state_dict(), "./checkpoint/" + args.model + ".pth")
-            torch.save(net.state_dict(), "/home/aasadian/tofd/saved/res8_teacher_res110_"+str(SEED)+ ".pth")
-print("Training Finished, Best Accuracy is %.4f%%" % (best_acc * 100))
+            print('Test Set AccuracyAcc:  %.4f%% ' % (100 * correct / total))
+            if correct / total > best_acc:
+                best_acc = correct / total
+                print("Best Accuracy Updated: ", best_acc * 100)
+                #torch.save(net.state_dict(), "./checkpoint/" + args.model + ".pth")
+                torch.save(net.state_dict(), "/home/aasadian/tofd/saved/res8_teacher_res110_"+str(SEED)+ ".pth")
+    print("Training Finished, Best Accuracy is %.4f%%" % (best_acc * 100))
 time_elapsed = time.time() - since
 print('Training complete in {:.0f}m {:.0f}s'.format(
     time_elapsed // 60, time_elapsed % 60))

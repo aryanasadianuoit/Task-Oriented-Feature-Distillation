@@ -6,7 +6,7 @@ from torch import nn
 from general_utils import experiment_result_saver
 from general_utils import test_data_evaluation
 from general_utils import checkpoint_saver
-from models.resnet_cifar import resnet110_cifar
+from models.resnet_cifar import resnet110_cifar,resnet20_cifar
 from general_utils import get_optimizer_scheduler
 from torchvision import transforms
 from torchvision import datasets
@@ -446,7 +446,7 @@ def train_grid_regular_ce(model,
         print(evaluation_log)
 
 
-SEEDS = [50,67]
+SEEDS = [30,50,67]
 setting = "dih"
 DEVICE = "cuda:3"
 
@@ -454,7 +454,7 @@ DEVICE = "cuda:3"
 for SEED in SEEDS:
     reproducible_state(seed=SEED,device=DEVICE)
 
-    teacher = resnet110_cifar(num_classes=100)
+    teacher = resnet20_cifar(num_classes=100)
 
 
     if setting == "dih":
@@ -475,7 +475,7 @@ for SEED in SEEDS:
 
     train_grid_regular_ce(teacher,
                       optimizer=optimizer,
-                      experiment_name="teacher_res110_seed_"+str(SEED),
+                      experiment_name="teacher_res20_seed_"+str(SEED),
                       input_data_size=(128,32,32),
                       scheduler=scheduler,
                       epochs=EPOCHS,

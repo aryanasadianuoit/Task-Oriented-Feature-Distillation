@@ -121,14 +121,10 @@ def get_train_valid_loader_cifars(batch_size,
         if cifar10_100 == "cifar100":
 
             valid_loader = get_test_loader_cifar(batch_size=batch_size,
-                                             dataset="cifar100",
-                                             output_width=output_width,
-                                             output_height=output_height)
+                                             dataset="cifar100")
         elif cifar10_100 == "cifar10":
             valid_loader = get_test_loader_cifar(batch_size=batch_size,
-                                                 dataset="cifar10",
-                                                 output_width=output_width,
-                                                 output_height=output_height)
+                                                 dataset="cifar10")
     else:
         valid_loader = torch.utils.data.DataLoader(
             valid_dataset, batch_size=batch_size, sampler=valid_sampler,
@@ -164,9 +160,7 @@ def get_train_valid_loader_cifars(batch_size,
 
 def get_test_loader_cifar(
                     batch_size,
-                    dataset="cifar10",
-                    output_height = 32,
-                    output_width = 32,
+                    dataset="cifar100",
                     shuffle=True,
                     num_workers=16,
                     pin_memory=True,
@@ -320,9 +314,7 @@ def get_train_valid_loader_imagenet(batch_size,
     if test_as_valid:
 
         valid_loader = get_test_loader_cifar(batch_size=batch_size,
-                                             dataset="cifar100",
-                                             output_width=output_width,
-                                             output_height=output_height)
+                                             dataset="cifar100")
     else:
         valid_loader = torch.utils.data.DataLoader(
             valid_dataset, batch_size=batch_size, sampler=valid_sampler,
@@ -470,9 +462,7 @@ def get_train_valid_loader_svhn(batch_size,
         num_workers=num_workers, pin_memory=pin_memory,
     )
 
-    valid_loader = get_test_loader_cifar(batch_size=batch_size,
-                                         output_width=output_width,
-                                         output_height=output_height)
+    valid_loader = get_test_loader_cifar(batch_size=batch_size)
 
     data_loader_dict = {
         "train": train_loader,
